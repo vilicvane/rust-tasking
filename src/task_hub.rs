@@ -34,13 +34,13 @@ impl<
     name_prefix: impl Into<String>,
     task: TTask,
     descriptor_comparator: TDescriptorComparator,
-    task_options: Option<TaskOptions>,
+    task_options: TaskOptions,
   ) -> Self {
     Self {
       name_prefix: name_prefix.into(),
       task: Arc::new(Mutex::new(task)),
       descriptor_comparator: Arc::new(descriptor_comparator),
-      task_options: task_options.unwrap_or_default(),
+      task_options,
       task_map: Arc::new(Mutex::new(HashMap::new())),
     }
   }
@@ -108,7 +108,7 @@ impl<
           ),
           self.task.clone(),
           self.descriptor_comparator.clone(),
-          Some(self.task_options.clone()),
+          self.task_options.clone(),
         ))
       })
       .clone();
@@ -125,7 +125,7 @@ impl<
   TDescriptor: PartialEq + Clone + fmt::Debug + Send + 'static,
 > TaskHub<TTaskKey, TTask, TDescriptor, DefaultComparator<TDescriptor>>
 {
-  pub fn new(name_prefix: impl Into<String>, task: TTask, options: Option<TaskOptions>) -> Self {
+  pub fn new(name_prefix: impl Into<String>, task: TTask, options: TaskOptions) -> Self {
     Self::new_with_comparator(name_prefix, task, default_descriptor_comparator, options)
   }
 }

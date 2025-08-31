@@ -1,5 +1,5 @@
 use lits::duration;
-use tasking::Task;
+use tasking::{Task, TaskOptions};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -17,9 +17,14 @@ async fn main() -> anyhow::Result<()> {
 
       abort_receiver.await?;
 
+      tokio::time::sleep(duration!("5s")).await;
+
       Ok(())
     },
-    Default::default(),
+    TaskOptions {
+      abort_timeout: Some(duration!("1s")),
+      ..Default::default()
+    },
   );
 
   task

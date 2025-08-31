@@ -19,7 +19,7 @@ async fn main() -> anyhow::Result<()> {
 
       Ok(())
     },
-    None,
+    Default::default(),
   );
 
   let foo_key = "foo".to_owned();

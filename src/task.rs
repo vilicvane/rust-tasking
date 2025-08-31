@@ -35,6 +35,7 @@ struct TaskInstance<TDescriptor> {
 pub struct TaskOptions {
   pub restart_on_error: bool,
   pub restart_interval: Duration,
+  pub abort_timeout: Option<Duration>,
 }
 
 impl Default for TaskOptions {
@@ -42,6 +43,7 @@ impl Default for TaskOptions {
     Self {
       restart_on_error: true,
       restart_interval: duration!("1s"),
+      abort_timeout: None,
     }
   }
 }
@@ -58,7 +60,7 @@ impl<
     name: impl Into<String>,
     task: TTask,
     descriptor_comparator: TDescriptorComparator,
-    options: Option<TaskOptions>,
+    options: TaskOptions,
   ) -> Self {
     Self::new_with_comparator_internal(
       name,
@@ -72,13 +74,13 @@ impl<
     name: impl Into<String>,
     task: Arc<Mutex<TTask>>,
     descriptor_comparator: Arc<TDescriptorComparator>,
-    options: Option<TaskOptions>,
+    options: TaskOptions,
   ) -> Self {
     Self {
       name: name.into(),
       task,
       descriptor_comparator,
-      options: options.unwrap_or_default(),
+      options,
       instance: Mutex::new(None),
       abort: Arc::new(Mutex::new(Abort {
         aborted: false,
@@ -101,24 +103,13 @@ impl<
     };
 
     if let Some(instance) = instance {
-      let should_wait = {
-        let mut abort = self.abort.lock().unwrap();
-
-        abort.aborted = true;
-
-        abort
-          .sender
-          .take()
-          .is_some_and(|abort_sender| abort_sender.send(()).is_ok())
-      };
-
-      if should_wait {
-        instance.handle.await.ok();
-      } else {
-        log::info!("[{name}] task aborted.", name = self.name);
-
-        instance.handle.abort();
-      }
+      drop_instance(
+        self.name.clone(),
+        instance.handle,
+        self.abort.clone(),
+        self.options.abort_timeout,
+      )
+      .await;
     }
 
     log::info!("[{name}] update: {new_descriptor:?}", name = self.name);
@@ -139,7 +130,7 @@ impl<
 
           let task_future = (*task.lock().unwrap())(new_descriptor.clone(), abort_receiver);
 
-          log::info!("[{name}] task started.");
+          log::info!("[{name}] task instance started.");
 
           let result = task_future.await.into();
 
@@ -148,15 +139,15 @@ impl<
           match result {
             Ok(()) => {
               if aborted {
-                log::info!("[{name}] task aborted gracefully.");
+                log::info!("[{name}] task instance aborted gracefully.");
               } else {
-                log::info!("[{name}] task completed.");
+                log::info!("[{name}] task instance completed.");
               }
 
               break;
             }
             Err(error) => {
-              log::error!("[{name}] task error: {error:?}");
+              log::error!("[{name}] task instance error: {error:?}");
 
               if !options.restart_on_error {
                 break;
@@ -194,28 +185,66 @@ impl<TTask, TDescriptor, TDescriptorComparator> Drop
 {
   fn drop(&mut self) {
     if let Some(instance) = self.instance.lock().unwrap().take() {
-      let mut abort = self.abort.lock().unwrap();
+      tokio::spawn({
+        let task_name = self.name.clone();
 
-      abort.aborted = true;
+        log::info!("[{task_name}] task dropped.");
 
-      if abort
-        .sender
-        .take()
-        .is_none_or(|abort_sender| abort_sender.send(()).is_err())
-      {
-        instance.handle.abort();
-
-        log::info!("[{name}] task dropped.", name = self.name);
-      } else {
-        let name = self.name.clone();
-
-        tokio::spawn(async move {
-          instance.handle.await.ok();
-
-          log::info!("[{name}] task dropped.");
-        });
-      }
+        drop_instance(
+          task_name,
+          instance.handle,
+          self.abort.clone(),
+          self.options.abort_timeout,
+        )
+      });
     }
+  }
+}
+
+async fn drop_instance(
+  task_name: String,
+  handle: tokio::task::JoinHandle<()>,
+  abort: Arc<Mutex<Abort>>,
+  abort_timeout: Option<Duration>,
+) {
+  let should_wait = {
+    let mut abort = abort.lock().unwrap();
+
+    abort.aborted = true;
+
+    abort
+      .sender
+      .take()
+      .is_some_and(|abort_sender| abort_sender.send(()).is_ok())
+  };
+
+  let result = if should_wait {
+    if let Some(abort_timeout) = abort_timeout {
+      let abort_handle = handle.abort_handle();
+
+      match tokio::time::timeout(abort_timeout, handle).await {
+        Ok(result) => result,
+        Err(_) => {
+          abort_handle.abort();
+
+          log::info!("[{task_name}] task instance aborted after graceful attempt timed out.",);
+
+          Ok(())
+        }
+      }
+    } else {
+      handle.await
+    }
+  } else {
+    handle.abort();
+
+    log::info!("[{task_name}] task instance aborted.");
+
+    Ok(())
+  };
+
+  if let Err(error) = result {
+    log::error!("[{task_name}] task instance aborted with error: {error:?}");
   }
 }
 
@@ -226,7 +255,7 @@ impl<
   TDescriptor: PartialEq + Clone + fmt::Debug + Send + 'static,
 > Task<TTask, TDescriptor, DefaultComparator<TDescriptor>>
 {
-  pub fn new(name: impl Into<String>, task: TTask, options: Option<TaskOptions>) -> Self {
+  pub fn new(name: impl Into<String>, task: TTask, options: TaskOptions) -> Self {
     Self::new_with_comparator(name, task, default_descriptor_comparator, options)
   }
 }
