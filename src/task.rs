@@ -43,7 +43,7 @@ impl Default for TaskOptions {
     Self {
       restart_on_error: true,
       restart_interval: duration!("1s"),
-      abort_timeout: None,
+      abort_timeout: Some(duration!("30s")),
     }
   }
 }

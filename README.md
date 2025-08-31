@@ -26,7 +26,7 @@ let task = Task::new(
 
     Ok(())
   },
-  None,
+  Default::default(),
 );
 
 task
