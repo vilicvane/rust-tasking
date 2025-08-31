@@ -26,7 +26,7 @@ impl<
   TTask: Fn(TDescriptor, AbortReceiver) -> TTaskFuture + Send + 'static,
   TTaskReturn: Into<anyhow::Result<()>>,
   TTaskFuture: Future<Output = TTaskReturn> + Send + 'static,
-  TDescriptor: PartialEq + Clone + fmt::Debug + Send + 'static,
+  TDescriptor: Clone + fmt::Debug + Send + 'static,
   TDescriptorComparator: (Fn(&TDescriptor, &TDescriptor) -> bool) + Send + Sync + 'static,
 > TaskHub<TTaskKey, TTask, TDescriptor, TDescriptorComparator>
 {
