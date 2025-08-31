@@ -1,0 +1,25 @@
+[package]
+name = "tasking"
+version = "0.1.0"
+edition = "2024"
+description = "Simple tasking utility that automatically replaces tasks based on descriptors."
+keywords = ["async", "task", "tokio"]
+license = "MIT"
+repository = "https://github.com/vilicvane/rust-tasking"
+documentation = "https://docs.rs/tasking"
+
+[dependencies]
+anyhow = "1"
+lits = "0.2"
+log = "0.4"
+tokio = { version = "1", features = ["full"] }
+
+[dev-dependencies]
+env_logger = "0.11.8"
+
+[lints.clippy]
+collapsible_else_if = "allow"
+disallowed_macros = "warn"
+too_many_arguments = "allow"
+type_complexity = "allow"
+module_inception = "allow"
