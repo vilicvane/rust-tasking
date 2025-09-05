@@ -14,22 +14,22 @@ pub struct Task<TTask, TDescriptor, TDescriptorComparator> {
   task: Arc<Mutex<TTask>>,
   descriptor_comparator: Arc<TDescriptorComparator>,
   options: TaskOptions,
-  instance: Mutex<Option<TaskInstance<TDescriptor>>>,
-  abort: Arc<Mutex<Abort>>,
+  descriptor: Mutex<Option<TDescriptor>>,
+  handle: Mutex<Option<tokio::task::JoinHandle<()>>>,
+  instance: Arc<tokio::sync::Mutex<Option<Arc<TaskInstance>>>>,
+  // Separated state from `instance` to avoid contagious async Mutex.
+  instance_state: Mutex<Option<Arc<Mutex<TaskInstanceState>>>>,
 }
 
-struct Abort {
-  aborted: bool,
-  sender: Option<AbortSender>,
+enum TaskInstanceState {
+  Active,
+  Completed,
+  Aborted,
+  Error,
 }
 
 pub type AbortSender = tokio::sync::oneshot::Sender<()>;
 pub type AbortReceiver = tokio::sync::oneshot::Receiver<()>;
-
-struct TaskInstance<TDescriptor> {
-  descriptor: TDescriptor,
-  handle: tokio::task::JoinHandle<()>,
-}
 
 #[derive(Clone)]
 pub struct TaskOptions {
@@ -48,6 +48,11 @@ impl Default for TaskOptions {
   }
 }
 
+struct TaskInstance {
+  being_aborted: Mutex<bool>,
+  abort_sender: Mutex<Option<AbortSender>>,
+}
+
 impl<
   TTask: Fn(TDescriptor, AbortReceiver) -> TTaskFuture + Send + 'static,
   TTaskReturn: Into<anyhow::Result<()>>,
@@ -63,7 +68,7 @@ impl<
     options: TaskOptions,
   ) -> Self {
     Self::new_with_comparator_internal(
-      name,
+      name.into(),
       Arc::new(Mutex::new(task)),
       Arc::new(descriptor_comparator),
       options,
@@ -71,77 +76,93 @@ impl<
   }
 
   pub(crate) fn new_with_comparator_internal(
-    name: impl Into<String>,
+    name: String,
     task: Arc<Mutex<TTask>>,
     descriptor_comparator: Arc<TDescriptorComparator>,
     options: TaskOptions,
   ) -> Self {
     Self {
-      name: name.into(),
+      name,
       task,
       descriptor_comparator,
       options,
-      instance: Mutex::new(None),
-      abort: Arc::new(Mutex::new(Abort {
-        aborted: false,
-        sender: None,
-      })),
+      descriptor: Mutex::new(None),
+      handle: Mutex::new(None),
+      instance: Arc::new(tokio::sync::Mutex::new(None)),
+      instance_state: Mutex::new(None),
     }
   }
 
   pub async fn update(&self, new_descriptor: TDescriptor) {
-    let instance = {
-      let mut instance = self.instance.lock().unwrap();
+    let mut instance = self.instance.lock().await;
 
-      if let Some(instance) = instance.as_ref()
-        && (self.descriptor_comparator)(&instance.descriptor, &new_descriptor)
-      {
-        return;
-      }
-
-      instance.take()
-    };
-
-    if let Some(instance) = instance {
-      drop_instance(
-        self.name.clone(),
-        instance.handle,
-        self.abort.clone(),
-        self.options.abort_timeout,
-      )
-      .await;
+    if let Some(descriptor) = self.descriptor.lock().unwrap().as_ref()
+      && (self.descriptor_comparator)(descriptor, &new_descriptor)
+    {
+      return;
     }
 
     log::info!("[{name}] update: {new_descriptor:?}", name = self.name);
 
-    let new_handle = tokio::spawn({
+    let state = Arc::new(Mutex::new(TaskInstanceState::Active));
+
+    *self.instance_state.lock().unwrap() = Some(state.clone());
+
+    if let Some(instance) = instance.as_ref() {
+      let handle = self.handle.lock().unwrap().take().unwrap();
+
+      if !handle.is_finished() {
+        *instance.being_aborted.lock().unwrap() = true;
+
+        let abort_sender = instance.abort_sender.lock().unwrap().take();
+
+        abort(
+          self.name.clone(),
+          handle,
+          abort_sender,
+          self.options.abort_timeout,
+        )
+        .await;
+      }
+    }
+
+    let new_instance = Arc::new(TaskInstance {
+      being_aborted: Mutex::new(false),
+      abort_sender: Mutex::new(None),
+    });
+
+    let instance_future = {
       let name = self.name.clone();
       let task = self.task.clone();
-      let new_descriptor = new_descriptor.clone();
       let options = self.options.clone();
 
-      let abort = self.abort.clone();
+      let instance = new_instance.clone();
+      let descriptor = new_descriptor.clone();
 
       async move {
         loop {
           let (abort_sender, abort_receiver) = tokio::sync::oneshot::channel();
 
-          abort.lock().unwrap().sender.replace(abort_sender);
+          instance.abort_sender.lock().unwrap().replace(abort_sender);
 
-          let task_future = (*task.lock().unwrap())(new_descriptor.clone(), abort_receiver);
+          let task_future = (*task.lock().unwrap())(descriptor.clone(), abort_receiver);
 
           log::info!("[{name}] task instance started.");
 
           let result = task_future.await.into();
 
-          let aborted = abort.lock().unwrap().aborted;
+          let being_aborted = *instance.being_aborted.lock().unwrap();
 
           match result {
             Ok(()) => {
-              if aborted {
+              if being_aborted {
                 log::info!("[{name}] task instance aborted gracefully.");
+
+                *state.lock().unwrap() = TaskInstanceState::Aborted;
               } else {
                 log::info!("[{name}] task instance completed.");
+
+                *state.lock().unwrap() = TaskInstanceState::Completed;
               }
 
               break;
@@ -149,34 +170,32 @@ impl<
             Err(error) => {
               log::error!("[{name}] task instance error: {error:?}");
 
-              if !options.restart_on_error {
+              if options.restart_on_error {
+                tokio::time::sleep(options.restart_interval).await;
+              } else {
+                *state.lock().unwrap() = TaskInstanceState::Error;
                 break;
               }
             }
           }
-
-          if aborted {
-            break;
-          }
-
-          tokio::time::sleep(options.restart_interval).await;
         }
       }
-    });
+    };
 
-    self.instance.lock().unwrap().replace(TaskInstance {
-      descriptor: new_descriptor,
-      handle: new_handle,
-    });
+    let handle = tokio::spawn(instance_future);
+
+    self.handle.lock().unwrap().replace(handle);
+    self.descriptor.lock().unwrap().replace(new_descriptor);
+
+    instance.replace(new_instance);
   }
 
-  pub fn is_running(&self) -> bool {
-    self
-      .instance
-      .lock()
-      .unwrap()
-      .as_ref()
-      .is_some_and(|instance| !instance.handle.is_finished())
+  pub fn is_active(&self) -> bool {
+    if let Some(state) = self.instance_state.lock().unwrap().as_ref() {
+      matches!(*state.lock().unwrap(), TaskInstanceState::Active)
+    } else {
+      false
+    }
   }
 }
 
@@ -184,39 +203,40 @@ impl<TTask, TDescriptor, TDescriptorComparator> Drop
   for Task<TTask, TDescriptor, TDescriptorComparator>
 {
   fn drop(&mut self) {
-    if let Some(instance) = self.instance.lock().unwrap().take() {
-      tokio::spawn({
-        let task_name = self.name.clone();
+    let task_name = self.name.clone();
 
-        log::info!("[{task_name}] task dropped.");
+    log::info!("[{task_name}] task dropped.");
 
-        drop_instance(
-          task_name,
-          instance.handle,
-          self.abort.clone(),
-          self.options.abort_timeout,
-        )
-      });
-    }
+    tokio::spawn({
+      let Some(handle) = self.handle.lock().unwrap().take() else {
+        return;
+      };
+
+      let instance = self.instance.clone();
+      let abort_timeout = self.options.abort_timeout;
+
+      async move {
+        let Some(instance) = instance.lock().await.take() else {
+          return;
+        };
+
+        *instance.being_aborted.lock().unwrap() = true;
+
+        let abort_sender = instance.abort_sender.lock().unwrap().take();
+
+        abort(task_name, handle, abort_sender, abort_timeout).await;
+      }
+    });
   }
 }
 
-async fn drop_instance(
+async fn abort(
   task_name: String,
   handle: tokio::task::JoinHandle<()>,
-  abort: Arc<Mutex<Abort>>,
+  abort_sender: Option<AbortSender>,
   abort_timeout: Option<Duration>,
 ) {
-  let should_wait = {
-    let mut abort = abort.lock().unwrap();
-
-    abort.aborted = true;
-
-    abort
-      .sender
-      .take()
-      .is_some_and(|abort_sender| abort_sender.send(()).is_ok())
-  };
+  let should_wait = abort_sender.is_some_and(|abort_sender| abort_sender.send(()).is_ok());
 
   let result = if should_wait {
     if let Some(abort_timeout) = abort_timeout {

@@ -3,7 +3,8 @@ use tasking::Task;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-  env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("tasking=")).init();
+  env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("task,tasking"))
+    .init();
 
   #[derive(PartialEq, Clone, Debug)]
   struct TaskDescriptor {

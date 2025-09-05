@@ -53,11 +53,7 @@ impl<
     self.update_tasks(descriptors, true).await;
   }
 
-  async fn update_tasks(
-    &self,
-    descriptors: Vec<(TTaskKey, TDescriptor)>,
-    keep_running_tasks: bool,
-  ) {
+  async fn update_tasks(&self, descriptors: Vec<(TTaskKey, TDescriptor)>, keep_active_tasks: bool) {
     let mut pending_task_key_set = self
       .task_map
       .lock()
@@ -74,12 +70,12 @@ impl<
 
     let mut task_map = self.task_map.lock().unwrap();
 
-    if keep_running_tasks {
+    if keep_active_tasks {
       for key in pending_task_key_set {
         let task = task_map.get(&key);
 
         if let Some(task) = task {
-          if task.is_running() {
+          if task.is_active() {
             continue;
           }
 

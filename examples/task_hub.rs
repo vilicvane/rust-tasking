@@ -3,7 +3,8 @@ use tasking::TaskHub;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-  env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("tasking=")).init();
+  env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("task_hub,tasking"))
+    .init();
 
   #[derive(PartialEq, Clone, Debug)]
   struct TaskDescriptor {
@@ -25,6 +26,8 @@ async fn main() -> anyhow::Result<()> {
   let foo_key = "foo".to_owned();
   let bar_key = "bar".to_owned();
 
+  log::info!("update [foo 1, bar 1]");
+
   task_hub
     .update(vec![
       (
@@ -44,6 +47,8 @@ async fn main() -> anyhow::Result<()> {
 
   tokio::time::sleep(duration!("1s")).await;
 
+  log::info!("merge [foo 2]");
+
   task_hub
     .merge(vec![(
       foo_key.clone(),
@@ -55,6 +60,8 @@ async fn main() -> anyhow::Result<()> {
 
   tokio::time::sleep(duration!("1s")).await;
 
+  log::info!("update [bar 2]");
+
   task_hub
     .update(vec![(
       bar_key.clone(),
@@ -65,6 +72,8 @@ async fn main() -> anyhow::Result<()> {
     .await;
 
   tokio::time::sleep(duration!("1s")).await;
+
+  log::info!("drop task hub");
 
   drop(task_hub);
 

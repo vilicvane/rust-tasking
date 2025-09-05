@@ -3,7 +3,10 @@ use tasking::{Task, TaskOptions};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-  env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("tasking=")).init();
+  env_logger::Builder::from_env(
+    env_logger::Env::default().default_filter_or("task_abort_timeout,tasking"),
+  )
+  .init();
 
   #[derive(PartialEq, Clone, Debug)]
   struct TaskDescriptor {

@@ -38,7 +38,7 @@ async fn descriptor_update_does_not_restart_for_equal_descriptors() {
   tokio::time::sleep(duration!("20ms")).await;
 
   assert_eq!(starts.load(Ordering::SeqCst), 1);
-  assert!(task.is_running());
+  assert!(task.is_active());
 
   // update with the same descriptor -> should not restart
   task.update(Descriptor("a")).await;
@@ -84,7 +84,7 @@ async fn restart_on_error_disabled_runs_once_and_stops() {
   tokio::time::sleep(duration!("50ms")).await;
 
   assert_eq!(runs.load(Ordering::SeqCst), 1);
-  assert!(!task.is_running());
+  assert!(!task.is_active());
 }
 
 #[tokio::test]
