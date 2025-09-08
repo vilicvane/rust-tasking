@@ -93,6 +93,14 @@ impl<
     }
   }
 
+  pub fn is_active(&self) -> bool {
+    if let Some(state) = self.instance_state.lock().unwrap().as_ref() {
+      matches!(*state.lock().unwrap(), TaskInstanceState::Active)
+    } else {
+      false
+    }
+  }
+
   pub async fn update(&self, new_descriptor: TDescriptor) {
     let mut instance = self.instance.lock().await;
 
@@ -188,14 +196,6 @@ impl<
     self.descriptor.lock().unwrap().replace(new_descriptor);
 
     instance.replace(new_instance);
-  }
-
-  pub fn is_active(&self) -> bool {
-    if let Some(state) = self.instance_state.lock().unwrap().as_ref() {
-      matches!(*state.lock().unwrap(), TaskInstanceState::Active)
-    } else {
-      false
-    }
   }
 }
 

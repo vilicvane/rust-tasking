@@ -10,6 +10,7 @@ documentation = "https://docs.rs/tasking"
 
 [dependencies]
 anyhow = "1"
+futures = "0.3"
 lits = "0.3"
 log = "0.4"
 tokio = { version = "1", features = ["full"] }

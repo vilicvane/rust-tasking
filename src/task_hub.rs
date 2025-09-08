@@ -45,6 +45,14 @@ impl<
     }
   }
 
+  pub fn prune_inactive(&self) {
+    self
+      .task_map
+      .lock()
+      .unwrap()
+      .retain(|_, task| task.is_active());
+  }
+
   pub async fn update(&self, descriptors: Vec<(TTaskKey, TDescriptor)>) {
     self.update_tasks(descriptors, false).await;
   }
@@ -53,40 +61,31 @@ impl<
     self.update_tasks(descriptors, true).await;
   }
 
-  async fn update_tasks(&self, descriptors: Vec<(TTaskKey, TDescriptor)>, keep_active_tasks: bool) {
-    let mut pending_task_key_set = self
-      .task_map
-      .lock()
-      .unwrap()
-      .keys()
+  async fn update_tasks(
+    &self,
+    descriptors: Vec<(TTaskKey, TDescriptor)>,
+    keep_existing_tasks: bool,
+  ) {
+    let key_set = descriptors
+      .iter()
+      .map(|(key, _)| key)
       .cloned()
       .collect::<HashSet<_>>();
 
-    for (key, descriptor) in descriptors {
-      pending_task_key_set.remove(&key);
-
-      self.add_task(key.clone(), descriptor).await;
+    if !keep_existing_tasks {
+      self
+        .task_map
+        .lock()
+        .unwrap()
+        .retain(|key, _| key_set.contains(key));
     }
 
-    let mut task_map = self.task_map.lock().unwrap();
+    let futures = descriptors
+      .into_iter()
+      .map(|(key, descriptor)| self.add_task(key, descriptor))
+      .collect::<Vec<_>>();
 
-    if keep_active_tasks {
-      for key in pending_task_key_set {
-        let task = task_map.get(&key);
-
-        if let Some(task) = task {
-          if task.is_active() {
-            continue;
-          }
-
-          task_map.remove(&key);
-        }
-      }
-    } else {
-      for key in pending_task_key_set {
-        task_map.remove(&key);
-      }
-    }
+    futures::future::join_all(futures).await;
   }
 
   async fn add_task(&self, key: TTaskKey, descriptor: TDescriptor) {
