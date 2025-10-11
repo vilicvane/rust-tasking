@@ -73,11 +73,13 @@ async fn main() -> anyhow::Result<()> {
 
   tokio::time::sleep(duration!("1s")).await;
 
+  log::info!("clear task hub");
+
+  task_hub.clear().await;
+
   log::info!("drop task hub");
 
   drop(task_hub);
-
-  tokio::signal::ctrl_c().await?;
 
   Ok(())
 }

@@ -7,6 +7,8 @@ use std::{
 
 use lits::duration;
 
+use crate::task_counter::TaskCounter;
+
 pub type DefaultComparator<T> = fn(&T, &T) -> bool;
 
 pub struct Task<TTask, TDescriptor, TDescriptorComparator> {
@@ -19,6 +21,7 @@ pub struct Task<TTask, TDescriptor, TDescriptorComparator> {
   instance: Arc<tokio::sync::Mutex<Option<Arc<TaskInstance>>>>,
   // Separated state from `instance` to avoid contagious async Mutex.
   instance_state: Mutex<Option<Arc<Mutex<TaskInstanceState>>>>,
+  task_counter: Option<Arc<TaskCounter>>,
 }
 
 enum TaskInstanceState {
@@ -90,7 +93,15 @@ impl<
       handle: Mutex::new(None),
       instance: Arc::new(tokio::sync::Mutex::new(None)),
       instance_state: Mutex::new(None),
+      task_counter: None,
     }
+  }
+
+  pub fn with_counter(mut self, task_counter: Arc<TaskCounter>) -> Self {
+    task_counter.inc();
+
+    self.task_counter = Some(task_counter);
+    self
   }
 
   pub fn is_active(&self) -> bool {
@@ -147,7 +158,13 @@ impl<
       let instance = new_instance.clone();
       let descriptor = new_descriptor.clone();
 
+      let task_counter = self.task_counter.clone();
+
       async move {
+        if let Some(task_counter) = task_counter.as_ref() {
+          task_counter.inc();
+        }
+
         loop {
           let (abort_sender, abort_receiver) = tokio::sync::oneshot::channel();
 
@@ -187,6 +204,10 @@ impl<
             }
           }
         }
+
+        if let Some(task_counter) = task_counter.as_ref() {
+          task_counter.dec();
+        }
       }
     };
 
@@ -204,6 +225,10 @@ impl<TTask, TDescriptor, TDescriptorComparator> Drop
 {
   fn drop(&mut self) {
     let task_name = self.name.clone();
+
+    if let Some(task_counter) = self.task_counter.as_ref() {
+      task_counter.dec();
+    }
 
     log::info!("[{task_name}] task dropped.");
 
