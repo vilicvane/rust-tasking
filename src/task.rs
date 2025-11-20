@@ -31,8 +31,8 @@ enum TaskInstanceState {
   Error,
 }
 
-pub type AbortSender = tokio::sync::oneshot::Sender<()>;
-pub type AbortReceiver = tokio::sync::oneshot::Receiver<()>;
+pub type AbortSender = tokio::sync::oneshot::Sender<bool>;
+pub type AbortReceiver = tokio::sync::oneshot::Receiver<bool>;
 
 #[derive(Clone)]
 pub struct TaskOptions {
@@ -140,6 +140,7 @@ impl<
           handle,
           abort_sender,
           self.options.abort_timeout,
+          true,
         )
         .await;
       }
@@ -249,7 +250,7 @@ impl<TTask, TDescriptor, TDescriptorComparator> Drop
 
         let abort_sender = instance.abort_sender.lock().unwrap().take();
 
-        abort(task_name, handle, abort_sender, abort_timeout).await;
+        abort(task_name, handle, abort_sender, abort_timeout, false).await;
       }
     });
   }
@@ -260,8 +261,9 @@ async fn abort(
   handle: tokio::task::JoinHandle<()>,
   abort_sender: Option<AbortSender>,
   abort_timeout: Option<Duration>,
+  replaced: bool,
 ) {
-  let should_wait = abort_sender.is_some_and(|abort_sender| abort_sender.send(()).is_ok());
+  let should_wait = abort_sender.is_some_and(|abort_sender| abort_sender.send(replaced).is_ok());
 
   let result = if should_wait {
     if let Some(abort_timeout) = abort_timeout {
