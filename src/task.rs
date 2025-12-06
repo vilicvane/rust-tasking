@@ -49,6 +49,7 @@ impl Future for AbortReceiver {
   }
 }
 
+#[derive(Clone, Debug, Default)]
 pub struct Abort {
   replaced: bool,
 }
