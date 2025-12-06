@@ -83,7 +83,7 @@ struct TaskInstance {
 }
 
 impl<
-  TTask: Fn(TDescriptor, AbortReceiver) -> TTaskFuture + Send + 'static,
+  TTask: FnMut(TDescriptor, AbortReceiver) -> TTaskFuture + Send + 'static,
   TTaskReturn: Into<anyhow::Result<()>>,
   TTaskFuture: Future<Output = TTaskReturn> + Send + 'static,
   TDescriptor: Clone + fmt::Debug + Send + 'static,
@@ -323,7 +323,7 @@ async fn abort(
 }
 
 impl<
-  TTask: Fn(TDescriptor, AbortReceiver) -> TTaskFuture + Send + 'static,
+  TTask: FnMut(TDescriptor, AbortReceiver) -> TTaskFuture + Send + 'static,
   TTaskReturn: Into<anyhow::Result<()>>,
   TTaskFuture: Future<Output = TTaskReturn> + Send + 'static,
   TDescriptor: PartialEq + Clone + fmt::Debug + Send + 'static,

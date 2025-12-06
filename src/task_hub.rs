@@ -27,7 +27,7 @@ pub struct TaskHub<
 
 impl<
   TTaskKey: Clone + Eq + Hash + ToString + Send + 'static,
-  TTask: Fn(TDescriptor, AbortReceiver) -> TTaskFuture + Send + 'static,
+  TTask: FnMut(TDescriptor, AbortReceiver) -> TTaskFuture + Send + 'static,
   TTaskReturn: Into<anyhow::Result<()>>,
   TTaskFuture: Future<Output = TTaskReturn> + Send + 'static,
   TDescriptor: Clone + fmt::Debug + Send + 'static,
@@ -144,7 +144,7 @@ impl<
 
 impl<
   TTaskKey: Clone + Eq + Hash + ToString + Send + 'static,
-  TTask: Fn(TDescriptor, AbortReceiver) -> TTaskFuture + Send + 'static,
+  TTask: FnMut(TDescriptor, AbortReceiver) -> TTaskFuture + Send + 'static,
   TTaskReturn: Into<anyhow::Result<()>>,
   TTaskFuture: Future<Output = TTaskReturn> + Send + 'static,
   TDescriptor: PartialEq + Clone + fmt::Debug + Send + 'static,
