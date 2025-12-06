@@ -1,6 +1,7 @@
 use std::{
   fmt,
   future::Future,
+  pin::Pin,
   sync::{Arc, Mutex},
   time::Duration,
 };
@@ -31,8 +32,32 @@ enum TaskInstanceState {
   Error,
 }
 
-pub type AbortSender = tokio::sync::oneshot::Sender<bool>;
-pub type AbortReceiver = tokio::sync::oneshot::Receiver<bool>;
+type AbortSender = tokio::sync::oneshot::Sender<bool>;
+
+pub struct AbortReceiver(tokio::sync::oneshot::Receiver<bool>);
+
+impl Future for AbortReceiver {
+  type Output = Result<Abort, tokio::sync::oneshot::error::RecvError>;
+
+  fn poll(
+    self: std::pin::Pin<&mut Self>,
+    context: &mut std::task::Context,
+  ) -> std::task::Poll<Self::Output> {
+    Pin::new(&mut self.get_mut().0)
+      .poll(context)
+      .map_ok(|replaced| Abort { replaced })
+  }
+}
+
+pub struct Abort {
+  replaced: bool,
+}
+
+impl Abort {
+  pub fn replaced(&self) -> bool {
+    self.replaced
+  }
+}
 
 #[derive(Clone)]
 pub struct TaskOptions {
@@ -171,7 +196,8 @@ impl<
 
           instance.abort_sender.lock().unwrap().replace(abort_sender);
 
-          let task_future = (*task.lock().unwrap())(descriptor.clone(), abort_receiver);
+          let task_future =
+            (*task.lock().unwrap())(descriptor.clone(), AbortReceiver(abort_receiver));
 
           log::info!("[{name}] task instance started.");
 

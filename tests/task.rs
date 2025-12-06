@@ -146,7 +146,9 @@ async fn abort_graceful_on_drop() {
         started.fetch_add(1, Ordering::SeqCst);
 
         // wait for the abort signal and then exit gracefully
-        let _ = abort_receiver.await;
+        let abort = abort_receiver.await?;
+
+        assert!(!abort.replaced());
 
         aborted.fetch_add(1, Ordering::SeqCst);
 
