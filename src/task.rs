@@ -39,10 +39,7 @@ pub struct AbortReceiver(tokio::sync::oneshot::Receiver<bool>);
 impl Future for AbortReceiver {
   type Output = Result<Abort, tokio::sync::oneshot::error::RecvError>;
 
-  fn poll(
-    self: std::pin::Pin<&mut Self>,
-    context: &mut std::task::Context,
-  ) -> std::task::Poll<Self::Output> {
+  fn poll(self: Pin<&mut Self>, context: &mut std::task::Context) -> std::task::Poll<Self::Output> {
     Pin::new(&mut self.get_mut().0)
       .poll(context)
       .map_ok(|replaced| Abort { replaced })
