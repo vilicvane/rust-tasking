@@ -74,11 +74,11 @@ impl<
       .retain(|_, task| task.is_active());
   }
 
-  pub async fn update(&self, descriptors: Vec<(TTaskKey, TDescriptor)>) {
+  pub async fn update(&self, descriptors: impl IntoIterator<Item = (TTaskKey, TDescriptor)>) {
     self.update_tasks(descriptors, false).await;
   }
 
-  pub async fn merge(&self, descriptors: Vec<(TTaskKey, TDescriptor)>) {
+  pub async fn merge(&self, descriptors: impl IntoIterator<Item = (TTaskKey, TDescriptor)>) {
     self.update_tasks(descriptors, true).await;
   }
 
@@ -90,9 +90,11 @@ impl<
 
   async fn update_tasks(
     &self,
-    descriptors: Vec<(TTaskKey, TDescriptor)>,
+    descriptors: impl IntoIterator<Item = (TTaskKey, TDescriptor)>,
     keep_existing_tasks: bool,
   ) {
+    let descriptors = descriptors.into_iter().collect::<Vec<_>>();
+
     let key_set = descriptors
       .iter()
       .map(|(key, _)| key)
