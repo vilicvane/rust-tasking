@@ -10,14 +10,11 @@ use lits::duration;
 
 use crate::task_counter::TaskCounter;
 
-pub type DefaultComparator<T> = fn(&T, &T) -> bool;
-
-pub struct Task<TTask, TDescriptor, TDescriptorComparator> {
+pub struct Task<TTask, TTaskDescriptor> {
   pub(crate) name: String,
   task: Arc<Mutex<TTask>>,
-  descriptor_comparator: Arc<TDescriptorComparator>,
   options: TaskOptions,
-  descriptor: Mutex<Option<TDescriptor>>,
+  descriptor: Mutex<Option<TTaskDescriptor>>,
   handle: Mutex<Option<tokio::task::JoinHandle<()>>>,
   instance: Arc<tokio::sync::Mutex<Option<Arc<TaskInstance>>>>,
   // Separated state from `instance` to avoid contagious async Mutex.
@@ -79,38 +76,21 @@ struct TaskInstance {
   abort_sender: Mutex<Option<AbortSender>>,
 }
 
-impl<
-  TTask: FnMut(TDescriptor, AbortReceiver) -> TTaskFuture + Send + 'static,
+impl<TTask, TTaskReturn, TTaskFuture, TTaskDescriptor> Task<TTask, TTaskDescriptor>
+where
+  TTask: FnMut(TTaskDescriptor, AbortReceiver) -> TTaskFuture + Send + 'static,
   TTaskReturn: Into<anyhow::Result<()>>,
   TTaskFuture: Future<Output = TTaskReturn> + Send + 'static,
-  TDescriptor: Clone + fmt::Debug + Send + 'static,
-  TDescriptorComparator: Fn(&TDescriptor, &TDescriptor) -> bool,
-> Task<TTask, TDescriptor, TDescriptorComparator>
+  TTaskDescriptor: TaskDescriptor,
 {
-  pub fn new_with_comparator(
-    name: impl Into<String>,
-    task: TTask,
-    descriptor_comparator: TDescriptorComparator,
-    options: TaskOptions,
-  ) -> Self {
-    Self::new_with_comparator_internal(
-      name.into(),
-      Arc::new(Mutex::new(task)),
-      Arc::new(descriptor_comparator),
-      options,
-    )
+  pub fn new(name: impl Into<String>, task: TTask, options: TaskOptions) -> Self {
+    Self::new_internal(name.into(), Arc::new(Mutex::new(task)), options)
   }
 
-  pub(crate) fn new_with_comparator_internal(
-    name: String,
-    task: Arc<Mutex<TTask>>,
-    descriptor_comparator: Arc<TDescriptorComparator>,
-    options: TaskOptions,
-  ) -> Self {
+  pub(crate) fn new_internal(name: String, task: Arc<Mutex<TTask>>, options: TaskOptions) -> Self {
     Self {
       name,
       task,
-      descriptor_comparator,
       options,
       descriptor: Mutex::new(None),
       handle: Mutex::new(None),
@@ -135,11 +115,11 @@ impl<
     }
   }
 
-  pub async fn update(&self, new_descriptor: TDescriptor) {
+  pub async fn update(&self, new_descriptor: TTaskDescriptor) {
     let mut instance = self.instance.lock().await;
 
     if let Some(descriptor) = self.descriptor.lock().unwrap().as_ref()
-      && (self.descriptor_comparator)(descriptor, &new_descriptor)
+      && descriptor.compare(&new_descriptor)
     {
       return;
     }
@@ -245,9 +225,7 @@ impl<
   }
 }
 
-impl<TTask, TDescriptor, TDescriptorComparator> Drop
-  for Task<TTask, TDescriptor, TDescriptorComparator>
-{
+impl<TTask, TTaskDescriptor> Drop for Task<TTask, TTaskDescriptor> {
   fn drop(&mut self) {
     let task_name = self.name.clone();
 
@@ -319,21 +297,9 @@ async fn abort(
   }
 }
 
-impl<
-  TTask: FnMut(TDescriptor, AbortReceiver) -> TTaskFuture + Send + 'static,
-  TTaskReturn: Into<anyhow::Result<()>>,
-  TTaskFuture: Future<Output = TTaskReturn> + Send + 'static,
-  TDescriptor: PartialEq + Clone + fmt::Debug + Send + 'static,
-> Task<TTask, TDescriptor, DefaultComparator<TDescriptor>>
+pub trait TaskDescriptor
+where
+  Self: Clone + fmt::Debug + Send + 'static,
 {
-  pub fn new(name: impl Into<String>, task: TTask, options: TaskOptions) -> Self {
-    Self::new_with_comparator(name, task, default_descriptor_comparator, options)
-  }
-}
-
-pub fn default_descriptor_comparator<TDescriptor: PartialEq>(
-  a: &TDescriptor,
-  b: &TDescriptor,
-) -> bool {
-  a == b
+  fn compare(&self, other: &Self) -> bool;
 }

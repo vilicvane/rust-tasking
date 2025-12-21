@@ -5,12 +5,27 @@ use std::sync::{
 
 use lits::duration;
 
-use tasking::{Task, TaskOptions};
+use tasking::{Task, TaskDescriptor, TaskOptions};
+
+#[derive(Clone, Debug)]
+struct EmptyTaskDescriptor {}
+
+impl TaskDescriptor for EmptyTaskDescriptor {
+  fn compare(&self, _other: &Self) -> bool {
+    true
+  }
+}
 
 #[tokio::test]
 async fn descriptor_update_does_not_restart_for_equal_descriptors() {
   #[derive(PartialEq, Clone, Debug)]
   struct Descriptor(&'static str);
+
+  impl TaskDescriptor for Descriptor {
+    fn compare(&self, other: &Self) -> bool {
+      self == other
+    }
+  }
 
   let starts = Arc::new(AtomicUsize::new(0));
 
@@ -66,7 +81,7 @@ async fn restart_on_error_disabled_runs_once_and_stops() {
 
   let task = Task::new(
     "restart-disabled",
-    move |_d: (), _abort| {
+    move |_d: EmptyTaskDescriptor, _abort| {
       let runs = runs_clone.clone();
 
       async move {
@@ -78,7 +93,7 @@ async fn restart_on_error_disabled_runs_once_and_stops() {
     options,
   );
 
-  task.update(()).await;
+  task.update(EmptyTaskDescriptor {}).await;
 
   // allow the single run to complete
   tokio::time::sleep(duration!("50ms")).await;
@@ -100,7 +115,7 @@ async fn restart_on_error_enabled_restarts_after_failure() {
 
   let task = Task::new(
     "restart-enabled",
-    move |_d: (), _abort| {
+    move |_d: EmptyTaskDescriptor, _abort| {
       let runs = runs_clone.clone();
 
       async move {
@@ -113,7 +128,7 @@ async fn restart_on_error_enabled_restarts_after_failure() {
     options,
   );
 
-  task.update(()).await;
+  task.update(EmptyTaskDescriptor {}).await;
 
   // allow time for a couple of restarts
   tokio::time::sleep(duration!("80ms")).await;
@@ -138,7 +153,7 @@ async fn abort_graceful_on_drop() {
 
   let task = Task::new(
     "abort-graceful",
-    move |_d: (), abort_receiver| {
+    move |_d: EmptyTaskDescriptor, abort_receiver| {
       let started = started_c.clone();
       let aborted = aborted_c.clone();
 
@@ -158,7 +173,7 @@ async fn abort_graceful_on_drop() {
     options,
   );
 
-  task.update(()).await;
+  task.update(EmptyTaskDescriptor {}).await;
 
   tokio::time::sleep(duration!("20ms")).await;
 
@@ -186,7 +201,7 @@ async fn abort_forced_when_task_ignores_abort() {
 
   let task = Task::new(
     "abort-forced",
-    move |_d: (), _abort| {
+    move |_d: EmptyTaskDescriptor, _abort| {
       let counter = counter_c.clone();
 
       async move {
@@ -206,7 +221,7 @@ async fn abort_forced_when_task_ignores_abort() {
     options,
   );
 
-  task.update(()).await;
+  task.update(EmptyTaskDescriptor {}).await;
 
   // let the task run a bit
   tokio::time::sleep(duration!("60ms")).await;

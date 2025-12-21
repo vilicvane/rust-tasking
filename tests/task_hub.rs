@@ -5,10 +5,19 @@ use std::sync::{
 
 use lits::duration;
 
-use tasking::{TaskHub, TaskOptions};
+use tasking::{TaskDescriptor, TaskHub, TaskOptions};
+
+#[derive(Clone, Debug)]
+struct EmptyTaskDescriptor {}
+
+impl TaskDescriptor for EmptyTaskDescriptor {
+  fn compare(&self, _other: &Self) -> bool {
+    true
+  }
+}
 
 #[tokio::test]
-async fn taskhub_adds_and_removes_tasks_on_update() {
+async fn task_hub_adds_and_removes_tasks_on_update() {
   let starts = Arc::new(AtomicUsize::new(0));
   let starts_c = starts.clone();
 
@@ -20,7 +29,7 @@ async fn taskhub_adds_and_removes_tasks_on_update() {
 
   let hub = TaskHub::new(
     "hub",
-    move |_d: (), _abort| {
+    move |_d: EmptyTaskDescriptor, _abort| {
       let starts = starts_c.clone();
 
       async move {
@@ -37,14 +46,19 @@ async fn taskhub_adds_and_removes_tasks_on_update() {
 
   // add two tasks
   hub
-    .update(vec![("a".to_string(), ()), ("b".to_string(), ())])
+    .update(vec![
+      ("a".to_string(), EmptyTaskDescriptor {}),
+      ("b".to_string(), EmptyTaskDescriptor {}),
+    ])
     .await;
   tokio::time::sleep(duration!("20ms")).await;
 
   assert_eq!(starts.load(Ordering::SeqCst), 2);
 
   // update to only include "a" -> "b" should be removed
-  hub.update(vec![("a".to_string(), ())]).await;
+  hub
+    .update(vec![("a".to_string(), EmptyTaskDescriptor {})])
+    .await;
   tokio::time::sleep(duration!("20ms")).await;
 
   // still one task started for "a", total starts remains 2
@@ -52,7 +66,7 @@ async fn taskhub_adds_and_removes_tasks_on_update() {
 }
 
 #[tokio::test]
-async fn taskhub_merge_keeps_running_tasks() {
+async fn task_hub_merge_keeps_running_tasks() {
   let starts = Arc::new(AtomicUsize::new(0));
   let starts_c = starts.clone();
 
@@ -64,7 +78,7 @@ async fn taskhub_merge_keeps_running_tasks() {
 
   let hub = TaskHub::new(
     "hub-merge",
-    move |_d: (), _abort| {
+    move |_d: EmptyTaskDescriptor, _abort| {
       let starts = starts_c.clone();
 
       async move {
@@ -81,14 +95,19 @@ async fn taskhub_merge_keeps_running_tasks() {
 
   // add two tasks
   hub
-    .update(vec![("x".to_string(), ()), ("y".to_string(), ())])
+    .update(vec![
+      ("x".to_string(), EmptyTaskDescriptor {}),
+      ("y".to_string(), EmptyTaskDescriptor {}),
+    ])
     .await;
   tokio::time::sleep(duration!("20ms")).await;
 
   assert_eq!(starts.load(Ordering::SeqCst), 2);
 
   // merge with only x -> y should be kept running because merge preserves running tasks
-  hub.merge(vec![("x".to_string(), ())]).await;
+  hub
+    .merge(vec![("x".to_string(), EmptyTaskDescriptor {})])
+    .await;
   tokio::time::sleep(duration!("20ms")).await;
 
   // no new starts should be created

@@ -1,5 +1,5 @@
 use lits::duration;
-use tasking::{Task, TaskOptions};
+use tasking::{Task, TaskDescriptor, TaskOptions};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -9,13 +9,19 @@ async fn main() -> anyhow::Result<()> {
   .init();
 
   #[derive(PartialEq, Clone, Debug)]
-  struct TaskDescriptor {
+  struct TestTaskDescriptor {
     data: String,
+  }
+
+  impl TaskDescriptor for TestTaskDescriptor {
+    fn compare(&self, other: &Self) -> bool {
+      self == other
+    }
   }
 
   let task = Task::new(
     "example",
-    |TaskDescriptor { data }, abort_receiver| async move {
+    |TestTaskDescriptor { data }, abort_receiver| async move {
       log::info!("task data: {data}");
 
       abort_receiver.await?;
@@ -31,7 +37,7 @@ async fn main() -> anyhow::Result<()> {
   );
 
   task
-    .update(TaskDescriptor {
+    .update(TestTaskDescriptor {
       data: "foo".to_owned(),
     })
     .await;
@@ -39,7 +45,7 @@ async fn main() -> anyhow::Result<()> {
   tokio::time::sleep(duration!("1s")).await;
 
   task
-    .update(TaskDescriptor {
+    .update(TestTaskDescriptor {
       data: "bar".to_owned(),
     })
     .await;

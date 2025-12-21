@@ -13,13 +13,19 @@ Simple tasking utility that automatically replaces tasks based on descriptors.
 
 ```rust
 #[derive(PartialEq, Clone, Debug)]
-struct TaskDescriptor {
+struct MyTaskDescriptor {
   data: String,
+}
+
+impl TaskDescriptor for MyTaskDescriptor {
+  fn compare(&self, other: &Self) -> bool {
+    self == other
+  }
 }
 
 let task = Task::new(
   "example",
-  |TaskDescriptor { data }, abort_receiver| async move {
+  |MyTaskDescriptor { data }, abort_receiver| async move {
     println!("task data: {data}");
 
     abort_receiver.await?;
@@ -30,7 +36,7 @@ let task = Task::new(
 );
 
 task
-  .update(TaskDescriptor {
+  .update(MyTaskDescriptor {
     data: "foo".to_owned(),
   })
   .await;

@@ -1,5 +1,5 @@
 use lits::duration;
-use tasking::TaskHub;
+use tasking::{TaskDescriptor, TaskHub};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -7,13 +7,19 @@ async fn main() -> anyhow::Result<()> {
     .init();
 
   #[derive(PartialEq, Clone, Debug)]
-  struct TaskDescriptor {
+  struct TestTaskDescriptor {
     data: String,
+  }
+
+  impl TaskDescriptor for TestTaskDescriptor {
+    fn compare(&self, other: &Self) -> bool {
+      self == other
+    }
   }
 
   let task_hub = TaskHub::new(
     "example",
-    |TaskDescriptor { data }, abort_receiver| async move {
+    |TestTaskDescriptor { data }, abort_receiver| async move {
       log::info!("task data: {data}");
 
       abort_receiver.await?;
@@ -32,13 +38,13 @@ async fn main() -> anyhow::Result<()> {
     .update(vec![
       (
         foo_key.clone(),
-        TaskDescriptor {
+        TestTaskDescriptor {
           data: "foo 1".to_owned(),
         },
       ),
       (
         bar_key.clone(),
-        TaskDescriptor {
+        TestTaskDescriptor {
           data: "bar 1".to_owned(),
         },
       ),
@@ -52,7 +58,7 @@ async fn main() -> anyhow::Result<()> {
   task_hub
     .merge(vec![(
       foo_key.clone(),
-      TaskDescriptor {
+      TestTaskDescriptor {
         data: "foo 2".to_owned(),
       },
     )])
@@ -65,7 +71,7 @@ async fn main() -> anyhow::Result<()> {
   task_hub
     .update(vec![(
       bar_key.clone(),
-      TaskDescriptor {
+      TestTaskDescriptor {
         data: "bar 2".to_owned(),
       },
     )])
