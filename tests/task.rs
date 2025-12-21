@@ -5,16 +5,7 @@ use std::sync::{
 
 use lits::duration;
 
-use tasking::{Task, TaskDescriptor, TaskOptions};
-
-#[derive(Clone, Debug)]
-struct EmptyTaskDescriptor {}
-
-impl TaskDescriptor for EmptyTaskDescriptor {
-  fn compare(&self, _other: &Self) -> bool {
-    true
-  }
-}
+use tasking::{EmptyTaskDescriptor, Task, TaskDescriptor, TaskOptions};
 
 #[tokio::test]
 async fn descriptor_update_does_not_restart_for_equal_descriptors() {
@@ -93,7 +84,7 @@ async fn restart_on_error_disabled_runs_once_and_stops() {
     options,
   );
 
-  task.update(EmptyTaskDescriptor {}).await;
+  task.update(EmptyTaskDescriptor).await;
 
   // allow the single run to complete
   tokio::time::sleep(duration!("50ms")).await;
@@ -128,7 +119,7 @@ async fn restart_on_error_enabled_restarts_after_failure() {
     options,
   );
 
-  task.update(EmptyTaskDescriptor {}).await;
+  task.update(EmptyTaskDescriptor).await;
 
   // allow time for a couple of restarts
   tokio::time::sleep(duration!("80ms")).await;
@@ -173,7 +164,7 @@ async fn abort_graceful_on_drop() {
     options,
   );
 
-  task.update(EmptyTaskDescriptor {}).await;
+  task.update(EmptyTaskDescriptor).await;
 
   tokio::time::sleep(duration!("20ms")).await;
 
@@ -221,7 +212,7 @@ async fn abort_forced_when_task_ignores_abort() {
     options,
   );
 
-  task.update(EmptyTaskDescriptor {}).await;
+  task.update(EmptyTaskDescriptor).await;
 
   // let the task run a bit
   tokio::time::sleep(duration!("60ms")).await;

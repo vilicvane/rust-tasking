@@ -5,16 +5,7 @@ use std::sync::{
 
 use lits::duration;
 
-use tasking::{TaskDescriptor, TaskHub, TaskOptions};
-
-#[derive(Clone, Debug)]
-struct EmptyTaskDescriptor {}
-
-impl TaskDescriptor for EmptyTaskDescriptor {
-  fn compare(&self, _other: &Self) -> bool {
-    true
-  }
-}
+use tasking::{EmptyTaskDescriptor, TaskHub, TaskOptions};
 
 #[tokio::test]
 async fn task_hub_adds_and_removes_tasks_on_update() {
@@ -47,8 +38,8 @@ async fn task_hub_adds_and_removes_tasks_on_update() {
   // add two tasks
   hub
     .update(vec![
-      ("a".to_string(), EmptyTaskDescriptor {}),
-      ("b".to_string(), EmptyTaskDescriptor {}),
+      ("a".to_string(), EmptyTaskDescriptor),
+      ("b".to_string(), EmptyTaskDescriptor),
     ])
     .await;
   tokio::time::sleep(duration!("20ms")).await;
@@ -57,7 +48,7 @@ async fn task_hub_adds_and_removes_tasks_on_update() {
 
   // update to only include "a" -> "b" should be removed
   hub
-    .update(vec![("a".to_string(), EmptyTaskDescriptor {})])
+    .update(vec![("a".to_string(), EmptyTaskDescriptor)])
     .await;
   tokio::time::sleep(duration!("20ms")).await;
 
@@ -96,8 +87,8 @@ async fn task_hub_merge_keeps_running_tasks() {
   // add two tasks
   hub
     .update(vec![
-      ("x".to_string(), EmptyTaskDescriptor {}),
-      ("y".to_string(), EmptyTaskDescriptor {}),
+      ("x".to_string(), EmptyTaskDescriptor),
+      ("y".to_string(), EmptyTaskDescriptor),
     ])
     .await;
   tokio::time::sleep(duration!("20ms")).await;
@@ -106,7 +97,7 @@ async fn task_hub_merge_keeps_running_tasks() {
 
   // merge with only x -> y should be kept running because merge preserves running tasks
   hub
-    .merge(vec![("x".to_string(), EmptyTaskDescriptor {})])
+    .merge(vec![("x".to_string(), EmptyTaskDescriptor)])
     .await;
   tokio::time::sleep(duration!("20ms")).await;
 

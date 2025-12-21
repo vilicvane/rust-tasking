@@ -303,3 +303,12 @@ where
 {
   fn compare(&self, other: &Self) -> bool;
 }
+
+#[derive(Clone, Debug)]
+pub struct EmptyTaskDescriptor;
+
+impl TaskDescriptor for EmptyTaskDescriptor {
+  fn compare(&self, _other: &Self) -> bool {
+    true
+  }
+}
